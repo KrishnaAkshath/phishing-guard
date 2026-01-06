@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Phishing Guard</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M12 2L3 7V12C3 17.55 6.84 22.74 12 24C17.16 22.74 21 17.55 21 12V7L12 2ZM10 17L6 13L7.41 11.59L10 14.17L16.59 7.58L18 9L10 17Z"
+            fill="url(#shield-grad)" />
+          <defs>
+            <linearGradient id="shield-grad" x1="3" y1="2" x2="21" y2="24">
+              <stop stop-color="#8b5cf6" />
+              <stop offset="1" stop-color="#3b82f6" />
+            </linearGradient>
+          </defs>
+        </svg>
+        <div class="logo-text">
+          <span class="logo-name">Phishing Guard</span>
+          <span class="logo-tag">Intent-Aware Protection</span>
+        </div>
+      </div>
+      <button class="toggle-btn" id="protection-toggle" title="Toggle Protection">
+        <span class="toggle-slider"></span>
+      </button>
+    </header>
+
+    <!-- Status Card -->
+    <section class="status-card" id="status-card">
+      <div class="status-indicator" id="status-indicator">
+        <div class="status-dot"></div>
+        <span class="status-text" id="status-text">Silent Mode</span>
+      </div>
+      <div class="current-site" id="current-site">
+        <span class="site-label">Current Site:</span>
+        <span class="site-url" id="site-url">-</span>
+      </div>
+      <button class="scan-btn" id="rescan-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+          <path
+            d="M17.65 6.35C16.2 4.9 14.21 4 12 4C7.58 4 4.01 7.58 4.01 12C4.01 16.42 7.58 20 12 20C15.73 20 18.84 17.45 19.73 14H17.65C16.83 16.33 14.61 18 12 18C8.69 18 6 15.31 6 12C6 8.69 8.69 6 12 6C13.66 6 15.14 6.69 16.22 7.78L13 11H20V4L17.65 6.35Z" />
+        </svg>
+        Scan Now
+      </button>
+    </section>
+
+    <!-- Stats Row -->
+    <section class="stats-row">
+      <div class="stat">
+        <span class="stat-num" id="stat-scans">0</span>
+        <span class="stat-label">Scans</span>
+      </div>
+      <div class="stat">
+        <span class="stat-num" id="stat-threats">0</span>
+        <span class="stat-label">Blocked</span>
+      </div>
+      <div class="stat backend-stat" id="backend-stat">
+        <span class="backend-dot"></span>
+        <span class="stat-label">Backend</span>
+      </div>
+    </section>
+
+    <!-- Scan History -->
+    <section class="history-card">
+      <h3 class="card-title">Recent Scans</h3>
+      <div class="history-list" id="history-list">
+        <div class="history-empty">No scans yet - browse to start</div>
+      </div>
+    </section>
+
+    <!-- Safety Tips -->
+    <section class="tips-card">
+      <h3 class="card-title">Stay Safe</h3>
+      <div class="tips-grid">
+        <div class="tip">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" />
+          </svg>
+          Verify URLs before login
+        </div>
+        <div class="tip">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path
+              d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2z" />
+          </svg>
+          Look for HTTPS lock
+        </div>
+        <div class="tip">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path
+              d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" />
+          </svg>
+          Don't click email links
+        </div>
+        <div class="tip">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z" />
+          </svg>
+          Use bookmarks for banks
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      Privacy-First | Local Processing
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+
+</html>

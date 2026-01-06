@@ -1,0 +1,6 @@
+flask==3.0.0
+flask-cors==4.0.0
+requests==2.31.0
+tldextract==5.1.1
+python-whois==0.8.0
+validators==0.22.0
