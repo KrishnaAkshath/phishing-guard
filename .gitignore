@@ -1,19 +1,36 @@
-# Python
+# Dependencies
+node_modules/
 venv/
 __pycache__/
 *.pyc
-*.pyo
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Database
+*.db
+
+# Environment files
 .env
+.env.local
+.env.production
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
 
-# OS
+# OS files
 .DS_Store
 Thumbs.db
 
 # Logs
 *.log
+npm-debug.log*
+
+# Extension build
+*.crx
+*.pem

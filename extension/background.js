@@ -1,6 +1,6 @@
 /**
- * Phishing Guard - Background Service Worker
- * Monitors tab navigation and coordinates scanning with the Python backend
+ * Phishing Guard - Background Service Worker v2.0
+ * Enhanced monitoring with threat intelligence and settings sync
  */
 
 const API_BASE = 'http://localhost:5000/api';
@@ -10,57 +10,128 @@ const state = {
     isEnabled: true,
     scanHistory: [],
     currentTabStatus: {},
+    settings: {
+        protection_level: 'medium',
+        modules: {
+            phishing_protection: true,
+            password_guard: true,
+            payment_protection: true,
+            link_scanner: true
+        },
+        preferences: {
+            real_time_alerts: true,
+            auto_block_dangerous: true,
+            notification_sound: false
+        }
+    },
+    whitelist: [],
+    blacklist: [],
     stats: {
         totalScans: 0,
         threatsBlocked: 0
-    }
+    },
+    apiKey: null
 };
 
-// Initialize extension
+// ============================================
+// INITIALIZATION
+// ============================================
+
 chrome.runtime.onInstalled.addListener(async () => {
-    console.log('Phishing Guard installed');
-
-    // Load saved state
-    const saved = await chrome.storage.local.get(['isEnabled', 'stats', 'scanHistory']);
-    if (saved.isEnabled !== undefined) state.isEnabled = saved.isEnabled;
-    if (saved.stats) state.stats = saved.stats;
-    if (saved.scanHistory) state.scanHistory = saved.scanHistory.slice(-100); // Keep last 100
-
-    // Set initial badge
+    console.log('Phishing Guard v2.0 installed');
+    await loadState();
     updateBadge('active');
 });
 
-// Listen for tab updates
+chrome.runtime.onStartup.addListener(async () => {
+    await loadState();
+    updateBadge(state.isEnabled ? 'active' : 'disabled');
+});
+
+async function loadState() {
+    try {
+        const saved = await chrome.storage.local.get([
+            'isEnabled', 'stats', 'scanHistory', 'settings',
+            'whitelist', 'blacklist', 'apiKey'
+        ]);
+
+        if (saved.isEnabled !== undefined) state.isEnabled = saved.isEnabled;
+        if (saved.stats) state.stats = saved.stats;
+        if (saved.scanHistory) state.scanHistory = saved.scanHistory.slice(-100);
+        if (saved.settings) state.settings = { ...state.settings, ...saved.settings };
+        if (saved.whitelist) state.whitelist = saved.whitelist;
+        if (saved.blacklist) state.blacklist = saved.blacklist;
+        if (saved.apiKey) state.apiKey = saved.apiKey;
+    } catch (e) {
+        console.error('Error loading state:', e);
+    }
+}
+
+async function saveState() {
+    try {
+        await chrome.storage.local.set({
+            isEnabled: state.isEnabled,
+            stats: state.stats,
+            scanHistory: state.scanHistory.slice(-100),
+            settings: state.settings,
+            whitelist: state.whitelist,
+            blacklist: state.blacklist,
+            apiKey: state.apiKey
+        });
+    } catch (e) {
+        console.error('Error saving state:', e);
+    }
+}
+
+// ============================================
+// TAB MONITORING
+// ============================================
+
 chrome.webNavigation.onCompleted.addListener(async (details) => {
-    if (details.frameId !== 0) return; // Only main frame
+    if (details.frameId !== 0) return;
+    if (!state.isEnabled) return;
 
-    const tab = await chrome.tabs.get(details.tabId);
-    if (!tab.url || !state.isEnabled) return;
+    try {
+        const tab = await chrome.tabs.get(details.tabId);
+        if (!tab.url) return;
 
-    // Skip chrome:// and extension pages
-    if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
-        updateBadgeForTab(details.tabId, 'inactive');
-        return;
+        // Skip chrome:// and extension pages
+        if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+            updateBadgeForTab(details.tabId, 'inactive');
+            return;
+        }
+
+        await scanUrl(tab.url, details.tabId);
+    } catch (e) {
+        console.error('Navigation handler error:', e);
     }
-
-    await scanUrl(tab.url, details.tabId);
 });
 
-// Listen for tab activation
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
-    const tab = await chrome.tabs.get(activeInfo.tabId);
-    if (!tab.url) return;
+    try {
+        const tab = await chrome.tabs.get(activeInfo.tabId);
+        if (!tab.url) return;
 
-    const status = state.currentTabStatus[activeInfo.tabId];
-    if (status) {
-        updateBadgeForTab(activeInfo.tabId, status.riskLevel);
+        const status = state.currentTabStatus[activeInfo.tabId];
+        if (status) {
+            updateBadgeForTab(activeInfo.tabId, status.risk_level);
+        }
+    } catch (e) {
+        // Tab might not exist
     }
 });
 
-// Message handler for popup and content scripts
+chrome.tabs.onRemoved.addListener((tabId) => {
+    delete state.currentTabStatus[tabId];
+});
+
+// ============================================
+// MESSAGE HANDLER
+// ============================================
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     handleMessage(request, sender).then(sendResponse);
-    return true; // Will respond asynchronously
+    return true;
 });
 
 async function handleMessage(request, sender) {
@@ -69,18 +140,26 @@ async function handleMessage(request, sender) {
             return {
                 isEnabled: state.isEnabled,
                 stats: state.stats,
+                settings: state.settings,
                 currentTab: await getCurrentTabStatus()
             };
 
         case 'toggleProtection':
             state.isEnabled = !state.isEnabled;
-            await chrome.storage.local.set({ isEnabled: state.isEnabled });
+            await saveState();
             updateBadge(state.isEnabled ? 'active' : 'disabled');
             return { isEnabled: state.isEnabled };
 
+        case 'updateSettings':
+            if (request.settings) {
+                state.settings = { ...state.settings, ...request.settings };
+                await saveState();
+            }
+            return { success: true, settings: state.settings };
+
         case 'scanCurrentTab':
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (tab && tab.url) {
+            if (tab?.url) {
                 return await scanUrl(tab.url, tab.id, true);
             }
             return { error: 'No active tab' };
@@ -89,33 +168,86 @@ async function handleMessage(request, sender) {
             return { history: state.scanHistory.slice(-20).reverse() };
 
         case 'contentScan':
-            // Content script reports page content for analysis
             if (sender.tab) {
                 return await scanWithContent(sender.tab.url, sender.tab.id, request.content);
             }
             return { error: 'No tab context' };
 
-        case 'intentScan':
-            // Intent-aware scanning triggered by content script
-            if (sender.tab) {
-                const result = await scanUrl(sender.tab.url, sender.tab.id);
-                return {
-                    analysis: result,
-                    intent: request.data?.intent,
-                    triggered: true
-                };
+        case 'addToWhitelist':
+            if (request.domain) {
+                return await addToWhitelist(request.domain);
             }
-            return { error: 'No tab context' };
+            return { error: 'Domain required' };
+
+        case 'addToBlacklist':
+            if (request.domain) {
+                return await addToBlacklist(request.domain);
+            }
+            return { error: 'Domain required' };
+
+        case 'getWhitelist':
+            return { whitelist: state.whitelist };
+
+        case 'getBlacklist':
+            return { blacklist: state.blacklist };
 
         case 'checkBackend':
             return await checkBackendHealth();
+
+        case 'setApiKey':
+            state.apiKey = request.apiKey;
+            await saveState();
+            return { success: true };
 
         default:
             return { error: 'Unknown action' };
     }
 }
 
+// ============================================
+// URL SCANNING
+// ============================================
+
 async function scanUrl(url, tabId, forceRescan = false) {
+    // Check if module is enabled
+    if (!state.settings.modules.phishing_protection) {
+        return { skipped: true, reason: 'Module disabled' };
+    }
+
+    // Check whitelist
+    const domain = getDomain(url);
+    if (state.whitelist.includes(domain)) {
+        const result = {
+            url,
+            domain,
+            is_phishing: false,
+            risk_score: 0,
+            risk_level: 'safe',
+            warnings: [],
+            whitelisted: true
+        };
+        state.currentTabStatus[tabId] = result;
+        updateBadgeForTab(tabId, 'safe');
+        return result;
+    }
+
+    // Check blacklist
+    if (state.blacklist.includes(domain)) {
+        const result = {
+            url,
+            domain,
+            is_phishing: true,
+            risk_score: 100,
+            risk_level: 'dangerous',
+            warnings: ['Domain is in your blacklist'],
+            blacklisted: true
+        };
+        state.currentTabStatus[tabId] = result;
+        updateBadgeForTab(tabId, 'dangerous');
+        showPhishingWarning(tabId, result);
+        return result;
+    }
+
     // Check cache if not forcing rescan
     if (!forceRescan && state.currentTabStatus[tabId]?.url === url) {
         return state.currentTabStatus[tabId];
@@ -124,9 +256,14 @@ async function scanUrl(url, tabId, forceRescan = false) {
     updateBadgeForTab(tabId, 'scanning');
 
     try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (state.apiKey) {
+            headers['X-API-Key'] = state.apiKey;
+        }
+
         const response = await fetch(`${API_BASE}/scan`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ url })
         });
 
@@ -136,7 +273,7 @@ async function scanUrl(url, tabId, forceRescan = false) {
 
         const result = await response.json();
 
-        // Update state
+        // Update stats
         state.stats.totalScans++;
         if (result.analysis.is_phishing) {
             state.stats.threatsBlocked++;
@@ -153,31 +290,22 @@ async function scanUrl(url, tabId, forceRescan = false) {
         state.currentTabStatus[tabId] = scanResult;
         state.scanHistory.push(scanResult);
 
-        // Save to storage
-        await chrome.storage.local.set({
-            stats: state.stats,
-            scanHistory: state.scanHistory.slice(-100)
-        });
+        await saveState();
 
         // Update badge
         updateBadgeForTab(tabId, result.analysis.risk_level);
 
-        // Show notification for dangerous sites
+        // Show warning for dangerous sites
         if (result.analysis.risk_level === 'dangerous') {
-            showPhishingWarning(tabId, result.analysis);
+            if (state.settings.preferences.auto_block_dangerous) {
+                showPhishingWarning(tabId, result.analysis);
+            }
         } else if (result.analysis.risk_level === 'suspicious') {
             showSuspiciousWarning(tabId, result.analysis);
         }
 
         // Notify content script
-        try {
-            await chrome.tabs.sendMessage(tabId, {
-                action: 'scanResult',
-                result: result.analysis
-            });
-        } catch (e) {
-            // Content script may not be ready
-        }
+        notifyContentScript(tabId, result.analysis);
 
         return scanResult;
 
@@ -195,10 +323,19 @@ async function scanUrl(url, tabId, forceRescan = false) {
 }
 
 async function scanWithContent(url, tabId, content) {
+    if (!state.settings.modules.phishing_protection) {
+        return { skipped: true };
+    }
+
     try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (state.apiKey) {
+            headers['X-API-Key'] = state.apiKey;
+        }
+
         const response = await fetch(`${API_BASE}/scan`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ url, content })
         });
 
@@ -221,7 +358,7 @@ async function scanWithContent(url, tabId, content) {
 
         if (result.analysis.is_phishing) {
             state.stats.threatsBlocked++;
-            await chrome.storage.local.set({ stats: state.stats });
+            await saveState();
 
             if (result.analysis.risk_level === 'dangerous') {
                 showPhishingWarning(tabId, result.analysis);
@@ -236,6 +373,86 @@ async function scanWithContent(url, tabId, content) {
     }
 }
 
+// ============================================
+// WHITELIST / BLACKLIST
+// ============================================
+
+async function addToWhitelist(domain) {
+    domain = domain.toLowerCase();
+
+    // Remove from blacklist if present
+    state.blacklist = state.blacklist.filter(d => d !== domain);
+
+    // Add to whitelist if not present
+    if (!state.whitelist.includes(domain)) {
+        state.whitelist.push(domain);
+    }
+
+    await saveState();
+
+    // Notify backend if authenticated
+    if (state.apiKey) {
+        try {
+            await fetch(`${API_BASE}/whitelist`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': state.apiKey
+                },
+                body: JSON.stringify({ domain })
+            });
+        } catch (e) {
+            console.error('Failed to sync whitelist:', e);
+        }
+    }
+
+    return { success: true, domain };
+}
+
+async function addToBlacklist(domain) {
+    domain = domain.toLowerCase();
+
+    // Remove from whitelist if present
+    state.whitelist = state.whitelist.filter(d => d !== domain);
+
+    // Add to blacklist if not present
+    if (!state.blacklist.includes(domain)) {
+        state.blacklist.push(domain);
+    }
+
+    await saveState();
+
+    // Notify backend if authenticated
+    if (state.apiKey) {
+        try {
+            await fetch(`${API_BASE}/blacklist`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': state.apiKey
+                },
+                body: JSON.stringify({ domain })
+            });
+        } catch (e) {
+            console.error('Failed to sync blacklist:', e);
+        }
+    }
+
+    return { success: true, domain };
+}
+
+// ============================================
+// HELPERS
+// ============================================
+
+function getDomain(url) {
+    try {
+        return new URL(url).hostname.toLowerCase();
+    } catch {
+        return '';
+    }
+}
+
 async function getCurrentTabStatus() {
     try {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -243,7 +460,7 @@ async function getCurrentTabStatus() {
             return state.currentTabStatus[tab.id];
         }
         return null;
-    } catch (e) {
+    } catch {
         return null;
     }
 }
@@ -257,6 +474,17 @@ async function checkBackendHealth() {
         return { healthy: false, error: error.message };
     }
 }
+
+function notifyContentScript(tabId, result) {
+    chrome.tabs.sendMessage(tabId, {
+        action: 'scanResult',
+        result
+    }).catch(() => { });
+}
+
+// ============================================
+// BADGE UPDATES
+// ============================================
 
 function updateBadge(status) {
     const badges = {
@@ -294,12 +522,18 @@ function updateBadgeForTab(tabId, status) {
     chrome.action.setBadgeBackgroundColor({ tabId, color: badge.color });
 }
 
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
 function showPhishingWarning(tabId, analysis) {
-    // Show browser notification
+    if (!state.settings.preferences.real_time_alerts) return;
+
+    // Browser notification
     chrome.notifications.create(`phishing-${tabId}`, {
         type: 'basic',
         iconUrl: 'icons/icon-128.png',
-        title: 'Phishing Site Detected',
+        title: '🚨 Phishing Site Detected',
         message: `This website appears to be a phishing attempt. Risk Score: ${analysis.risk_score}%`,
         priority: 2,
         requireInteraction: true
@@ -308,30 +542,31 @@ function showPhishingWarning(tabId, analysis) {
     // Inject warning into page
     chrome.tabs.sendMessage(tabId, {
         action: 'showWarning',
-        type: 'dangerous',
+        type: 'danger',
         analysis
     }).catch(() => { });
 }
 
 function showSuspiciousWarning(tabId, analysis) {
+    if (!state.settings.preferences.real_time_alerts) return;
+
     chrome.notifications.create(`suspicious-${tabId}`, {
         type: 'basic',
         iconUrl: 'icons/icon-128.png',
-        title: 'Suspicious Website Detected',
+        title: '⚠️ Suspicious Website',
         message: `This website has suspicious characteristics. Proceed with caution.`,
         priority: 1
     });
 
     chrome.tabs.sendMessage(tabId, {
         action: 'showWarning',
-        type: 'suspicious',
+        type: 'warning',
         analysis
     }).catch(() => { });
 }
 
-// Cleanup old tab status
-chrome.tabs.onRemoved.addListener((tabId) => {
-    delete state.currentTabStatus[tabId];
-});
+// ============================================
+// STARTUP
+// ============================================
 
-console.log('Phishing Guard background worker started');
+console.log('Phishing Guard v2.0 background worker started');

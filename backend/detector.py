@@ -191,10 +191,14 @@ class PhishingDetector:
                 if pattern.search(url):
                     result['risk_score'] += 5
             
-            # Check for mixed content (numbers replacing letters)
-            if re.search(r'[0oO][0oO]gle|amaz[0oO]n|paypa[l1]|faceb[0oO]{2}k', domain_full, re.IGNORECASE):
-                result['warnings'].append('Possible typosquatting detected')
-                result['risk_score'] += 45
+            # Check for mixed content (numbers replacing letters) - only if NOT trusted
+            if not result['details'].get('trusted_domain'):
+                if re.search(r'g[0o]{2}gle|amaz[0o]n|paypa[l1i]|faceb[0o]{2}k|netf[l1]ix|micr[0o]s[0o]ft', domain_full, re.IGNORECASE):
+                    # Make sure it's not the real domain
+                    real_domains = ['google.com', 'amazon.com', 'paypal.com', 'facebook.com', 'netflix.com', 'microsoft.com']
+                    if not any(rd in domain_full for rd in real_domains):
+                        result['warnings'].append('Possible typosquatting detected')
+                        result['risk_score'] += 45
             
             # Check for URL shorteners
             shorteners = ['bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'ow.ly', 'is.gd']
