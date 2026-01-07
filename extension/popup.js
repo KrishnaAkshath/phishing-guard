@@ -515,9 +515,9 @@ async function checkBackend() {
 // ============================================
 
 function openDashboard() {
-    // Open dashboard in new tab
+    // Open dashboard in new tab - Production URL
     chrome.tabs.create({
-        url: 'http://localhost:5173' // Vite dev server or production URL
+        url: 'https://phishing-guard-seven.vercel.app'
     });
 }
 
