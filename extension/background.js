@@ -3,7 +3,7 @@
  * Enhanced monitoring with threat intelligence and settings sync
  */
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'https://phishing-guard.onrender.com/api';
 
 // Extension state
 const state = {

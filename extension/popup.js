@@ -3,7 +3,7 @@
  * Premium UI with protection modules and dashboard integration
  */
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'https://phishing-guard.onrender.com/api';
 
 // UI Elements
 const elements = {
